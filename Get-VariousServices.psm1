@@ -30,11 +30,12 @@ function Get-NonMicrosoftServices (){
                             Server      = $ENV:COMPUTERNAME
                         }
                         $ServiceList += $Object
+                        Clear-Variable Object
                     }
                 }
                 catch {}
             }
-        $ServiceList | ft -AutoSize
+        Return $ServiceList
         }
     }
 }
@@ -61,10 +62,11 @@ function Get-MicrosoftServices (){
                             Server      = $ENV:COMPUTERNAME
                         }
                         $ServiceList += $Object
+                        Clear-Variable Object
                     }
                 }
                 catch {}
             }
-        $ServiceList | ft -AutoSize
+        Return $ServiceList
         }
     }
