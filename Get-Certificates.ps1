@@ -30,13 +30,13 @@
     Author: Dominiek Verham
     Mail: dominiek.verham@conoscenza.nl
 
-    Status: Productie
+    Status: In development
 #>
 ################# Functies #################
 [System.Collections.ArrayList]$LogVariable = @()
 $Who = "$env:userdomain\$env:username"
 $WinVer = Get-WmiObject -Class Win32_OperatingSystem | ForEach-Object -MemberName Caption
-$logFile = "PATH\log\Get-Certificates_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
+$logFile = "PAD\log\Get-Certificates_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
 $StartDateTime = (Get-Date -UFormat "%Y-%m-%d %H:%M:%S")
 # Voeg de koptekst toe aan het logbestand.
 Add-Content $logFile -value "************************************************************************************************
@@ -89,7 +89,7 @@ Function Get-Servers {
 function Get-LocalCertificates {
     [System.Collections.ArrayList]$LocalCertificates = @()
     $Today = Get-Date
-    $Global:CsvFile = "PATH\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "PAD\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     # We gaan voor de Computer store / Personal certificates
     Set-Location Cert:\LocalMachine\My
     # Vraag de personal certificates in de computer store op en check de geldigheid.
@@ -126,11 +126,11 @@ function Get-LocalCertificates {
 Function Get-RemoteCertificates {
     Add-Logging 'We vragen de certificaten nu op bij de remote servers...'
     [System.Collections.ArrayList]$RemoteCertificates = @()
-    $Today = Get-Date
-    $Global:CsvFile = "Path\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "PAD\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     $RemoteCertificates = foreach ($Server in $Global:ValidServers){
         Invoke-Command -ComputerName $Server -Authentication Kerberos -Credential $Global:AdminCredentials -ScriptBlock {
             $ServerCertificates = New-Object System.Collections.ArrayList
+            $Today = Get-Date
             Set-Location Cert:\LocalMachine\My
             $PcCerts = Get-ChildItem
             foreach ($Certificate in $PcCerts) {
