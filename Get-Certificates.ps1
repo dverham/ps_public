@@ -22,6 +22,7 @@
     Pas de waarde in de variabele $Global:CsvFile aan om een eigen pad te kiezen.
 
     Er zijn geen extra PowerShell modules nodig om dit script te kunnen gebruiken.
+
     
 .EXAMPLE
     .\Get-Certificates.ps1
@@ -31,7 +32,43 @@
     Mail: dominiek.verham@conoscenza.nl
 
     Status: In development
+
+    ################# Database #################
+    De functie Add-ToDatabase maakt gebruik van een SQL database. Gebruik de volgende sql query om de juiste tabellen
+    in de database aan te maken:
+
+    SET ANSI_NULLS ON
+    GO
+
+    SET QUOTED_IDENTIFIER ON
+    GO
+
+    SET ANSI_PADDING ON
+    GO
+
+    CREATE TABLE [dbo].[ZDL_Certificaten](
+        [Subject] [varchar](1000) NULL,
+        [FriendlyName] [varchar](1000) NULL,
+        [Thumbprint] [varchar](100) NOT NULL,
+        [NotAfter] [varchar](100) NULL,
+        [Status] [varchar](100) NULL,
+        [HasPrivateKey] [varchar](100) NULL,
+        [Issuer] [varchar](1000) NULL,
+        [Type] [varchar](100) NULL,
+        [Hostname] [varchar](100) NULL,
+    CONSTRAINT [PK_ZDL_Certificaten] PRIMARY KEY CLUSTERED 
+    (
+    [Thumbprint] ASC
+    )WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+    ) ON [PRIMARY]
+
+    GO
+
+    SET ANSI_PADDING OFF
+    GO
 #>
+################# Variabelen #################
+[System.Collections.ArrayList]$Global:DbCerts = @()
 ################# Functies #################
 [System.Collections.ArrayList]$LogVariable = @()
 $Who = "$env:userdomain\$env:username"
@@ -89,13 +126,11 @@ Function Get-Servers {
 function Get-LocalCertificates {
     [System.Collections.ArrayList]$LocalCertificates = @()
     $Today = Get-Date
-    $Global:CsvFile = "PAD\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "E:\SysteembeheerScripts\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     # We gaan voor de Computer store / Personal certificates
     Set-Location Cert:\LocalMachine\My
     # Vraag de personal certificates in de computer store op en check de geldigheid.
     $PcCerts = Get-ChildItem
-    # $ValidPcCerts = $PcCerts | where {$_.NotAfter -ge $Today}
-    # $ExpiredPcCerts = $AllPcCerts | where {$_.NotAfter -lt $Today}
     foreach ($Certificate in $PcCerts) {
         if ($Certificate.NotAfter -ge $Today) {
             $Status = 'Valid'
@@ -120,13 +155,14 @@ function Get-LocalCertificates {
         }
     $LocalCertificates | Export-Csv -Path $CsvFile -NoClobber -NoTypeInformation
     Add-Logging $LocalCertificates
+    $Global:DbCerts = $LocalCertificates
     Return $LocalCertificates
 }
 
 Function Get-RemoteCertificates {
     Add-Logging 'We vragen de certificaten nu op bij de remote servers...'
     [System.Collections.ArrayList]$RemoteCertificates = @()
-    $Global:CsvFile = "PAD\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "E:\SysteembeheerScripts\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     $RemoteCertificates = foreach ($Server in $Global:ValidServers){
         Invoke-Command -ComputerName $Server -Authentication Kerberos -Credential $Global:AdminCredentials -ScriptBlock {
             $ServerCertificates = New-Object System.Collections.ArrayList
@@ -159,23 +195,90 @@ Function Get-RemoteCertificates {
         }
     }
     $RemoteCertificates | Export-Csv -Path $CsvFile -NoClobber -NoTypeInformation
+    $Global:DbCerts = $RemoteCertificates
     $RemoteCertificates
+}
+
+function Add-ToDatabase{
+    # Gebruik deze functie om de gegevens van de certificaten in een database op te slaan.
+    # Het script gaat er vanuit dat de tabellen al aangemaakt zijn in de database.
+    # Check de informatie boven in het script om na te zoeken welke tabellen gebruikt worden.
+    # Maak een SQL verbinding
+    Try{
+    $DataSource                     = 'Server'
+    $User                           = 'Gebruikersnaam'
+    $Password                       = 'Wachtwoord'
+    $Database                       = 'Database'
+    $ConnectionString               = "Server=$DataSource;uid=$User;pwd=$Password;Database=$Database;Integrated Security=False;"
+    $Connection                     = New-Object System.Data.SqlClient.SqlConnection
+    $Connection.ConnectionString    = $ConnectionString
+    $Connection.Open()
+    }
+    Catch{
+        Add-Logging "Er kon geen verbinding gemaakt worden met de database! Er wordt niets weggeschreven in de database."
+        break
+    }
+    # Gegevens in de tables opschonen om duplicaten te voorkomen.
+    $Cmd = New-Object System.Data.SqlClient.SqlCommand
+    $Cmd.Connection = $Connection
+    Try {
+        $Cmd.CommandText = "DELETE FROM dbo.ZDL_Certificaten"
+        $Result = $Cmd.ExecuteNonQuery()
+    }
+    Catch {
+        Add-Logging 'Fout bij het verwijderen van de bestaande rijen. Onderzoek wat er fout gaat en probeer opnieuw.'
+        $Connection.Close()
+        break
+    }
+    # Vul de tabellen met gegevens
+    foreach ($DbCert in $Global:DbCerts){
+        $Cmd = New-Object System.Data.SqlClient.SqlCommand
+        $Cmd.Connection = $Connection
+        Try{
+            $Cmd.CommandText = "INSERT INTO dbo.ZDL_Certificaten (Subject,FriendlyName,Thumbprint,NotAfter,Status,HasPrivateKey,Issuer,Type,Hostname) 
+            VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}')" -f $DbCert.Subject,$DbCert.FriendlyName,$DbCert.Thumbprint,$DbCert.NotAfter,$DbCert.Status,$DbCert.HasPrivateKey,$DbCert.Issuer,$DbCert.Type,$DbCert.Hostname
+            $Result = $Cmd.ExecuteNonQuery()                
+            if ($result -eq 1){
+                Add-Logging "Het certificaat met thumbprint $($DbCert.Thumbprint) wordt toegevoegd."
+            }
+        }
+        Catch {
+            Add-Logging "Het toevoegen van certificaat met thumbprint $($DbCert.FriendlyName) is mislukt!"
+            # Gebruik deze regel om te troubleshooten: Add-Logging "PS Command: $($Cmd.commandtext). De foutmelding is: $($error)"
+        }
+    }
+    # Sluit de database connectie
+    $Connection.Close()
 }
 
 ################# Begin van het script #################
 Clear-Host
 Add-Logging "Dit script vraagt de lokale certificaten op en kan gebruikt worden om remote certificaten op te vragen."
 Add-Logging "Alleen de PERSONAL certificaten in de COMPUTER store worden opgevraagd."
+Write-Host -ForegroundColor Green 'Wil je dat de gegevens van de certificaten opgeslagen worden in een database? (J/N): ' -NoNewline
+$SaveToDb = Read-Host
+switch ($SaveToDb){
+    J{
+        Add-Logging 'De resultaten zullen opgeslagen worden in de database.'
+    }
+    N{
+        Add-Logging 'De resulaten worden niet opgeslagen in de database.'
+    }
+    default{
+        Add-Logging "De keuze $SaveToDb is geen geldige keuze."
+    }
+}
 Write-Host -ForegroundColor Green 'Wil je de certificaten lokaal opvragen of van remote systemen? (L/R): ' -NoNewline
 $Where = Read-Host
-switch ($Where)
-{
+switch ($Where){
     L
     {
         Add-Logging "De lokale certificaten worden geinventariseerd."
         Get-LocalCertificates
         Add-Logging "Voor het gemak worden de gegevens geexporteerd naar .CSV op $CSVFile"
-        break
+        if ($SaveToDb -eq 'J'){
+            Add-ToDatabase
+        }
     }
     R
     {
@@ -185,11 +288,12 @@ switch ($Where)
         Get-Servers
         Get-RemoteCertificates
         Add-Logging "Voor het gemak worden de gegevens geexporteerd naar .CSV op $CSVFile"
-        break
+        if ($SaveToDb -eq 'J'){
+            Add-ToDatabase
+        }
     }
     default
     {
         Add-Logging "$where is geen geldige keuze! Het script stopt."
-        break
     }
 }
