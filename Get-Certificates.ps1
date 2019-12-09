@@ -33,7 +33,7 @@
 
     Status: In development
 
-    ################# Database #################
+    ################# Database Configuratie #################
     De functie Add-ToDatabase maakt gebruik van een SQL database. Gebruik de volgende sql query om de juiste tabellen
     in de database aan te maken:
 
@@ -126,7 +126,7 @@ Function Get-Servers {
 function Get-LocalCertificates {
     [System.Collections.ArrayList]$LocalCertificates = @()
     $Today = Get-Date
-    $Global:CsvFile = "E:\SysteembeheerScripts\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "PAD\log\Get-Certificates_Local_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     # We gaan voor de Computer store / Personal certificates
     Set-Location Cert:\LocalMachine\My
     # Vraag de personal certificates in de computer store op en check de geldigheid.
@@ -162,9 +162,9 @@ function Get-LocalCertificates {
 Function Get-RemoteCertificates {
     Add-Logging 'We vragen de certificaten nu op bij de remote servers...'
     [System.Collections.ArrayList]$RemoteCertificates = @()
-    $Global:CsvFile = "E:\SysteembeheerScripts\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
+    $Global:CsvFile = "PAD\log\Get-Certificates_Remote_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".CSV"
     $RemoteCertificates = foreach ($Server in $Global:ValidServers){
-        Invoke-Command -ComputerName $Server -Authentication Kerberos -Credential $Global:AdminCredentials -ScriptBlock {
+        Invoke-Command -ComputerName $Server -Authentication Kerberos -ScriptBlock {
             $ServerCertificates = New-Object System.Collections.ArrayList
             $Today = Get-Date
             Set-Location Cert:\LocalMachine\My
@@ -205,10 +205,10 @@ function Add-ToDatabase{
     # Check de informatie boven in het script om na te zoeken welke tabellen gebruikt worden.
     # Maak een SQL verbinding
     Try{
-    $DataSource                     = 'Server'
-    $User                           = 'Gebruikersnaam'
-    $Password                       = 'Wachtwoord'
-    $Database                       = 'Database'
+    $DataSource                     = 'SERVER'
+    $User                           = 'USER'
+    $Password                       = 'PASSWORD'
+    $Database                       = 'DATABASE'
     $ConnectionString               = "Server=$DataSource;uid=$User;pwd=$Password;Database=$Database;Integrated Security=False;"
     $Connection                     = New-Object System.Data.SqlClient.SqlConnection
     $Connection.ConnectionString    = $ConnectionString
@@ -235,7 +235,7 @@ function Add-ToDatabase{
         $Cmd = New-Object System.Data.SqlClient.SqlCommand
         $Cmd.Connection = $Connection
         Try{
-            $Cmd.CommandText = "INSERT INTO dbo.ZDL_Certificaten (Subject,FriendlyName,Thumbprint,NotAfter,Status,HasPrivateKey,Issuer,Type,Hostname) 
+            $Cmd.CommandText = "INSERT INTO dbo.DATABASE (Subject,FriendlyName,Thumbprint,NotAfter,Status,HasPrivateKey,Issuer,Type,Hostname) 
             VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}')" -f $DbCert.Subject,$DbCert.FriendlyName,$DbCert.Thumbprint,$DbCert.NotAfter,$DbCert.Status,$DbCert.HasPrivateKey,$DbCert.Issuer,$DbCert.Type,$DbCert.Hostname
             $Result = $Cmd.ExecuteNonQuery()                
             if ($result -eq 1){
@@ -243,8 +243,8 @@ function Add-ToDatabase{
             }
         }
         Catch {
-            Add-Logging "Het toevoegen van certificaat met thumbprint $($DbCert.FriendlyName) is mislukt!"
-            # Gebruik deze regel om te troubleshooten: Add-Logging "PS Command: $($Cmd.commandtext). De foutmelding is: $($error)"
+            Add-Logging "Het toevoegen van certificaat met thumbprint $($DbCert.Thumbprint) is mislukt!"
+            Add-Logging "PS Command: $($Cmd.commandtext). De foutmelding is: $($error[0])"
         }
     }
     # Sluit de database connectie
@@ -271,8 +271,7 @@ switch ($SaveToDb){
 Write-Host -ForegroundColor Green 'Wil je de certificaten lokaal opvragen of van remote systemen? (L/R): ' -NoNewline
 $Where = Read-Host
 switch ($Where){
-    L
-    {
+    L{
         Add-Logging "De lokale certificaten worden geinventariseerd."
         Get-LocalCertificates
         Add-Logging "Voor het gemak worden de gegevens geexporteerd naar .CSV op $CSVFile"
@@ -280,11 +279,10 @@ switch ($Where){
             Add-ToDatabase
         }
     }
-    R
-    {
+    R{
         Add-Logging "De certificaten worden opgevraagd op externe systemen."
         Add-Logging "Voer de admin credentials in die gebruikt worden om de certificaten op te vragen: "
-        $Global:AdminCredentials = Get-Credential
+        # Uitgezet: $Global:AdminCredentials = Get-Credential
         Get-Servers
         Get-RemoteCertificates
         Add-Logging "Voor het gemak worden de gegevens geexporteerd naar .CSV op $CSVFile"
@@ -292,8 +290,7 @@ switch ($Where){
             Add-ToDatabase
         }
     }
-    default
-    {
+    default{
         Add-Logging "$where is geen geldige keuze! Het script stopt."
     }
 }
