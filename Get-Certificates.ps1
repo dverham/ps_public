@@ -34,8 +34,8 @@
     Status: In development
 
     ################# Database Configuratie #################
-    De functie Add-ToDatabase maakt gebruik van een SQL database. Gebruik de volgende sql query om de juiste tabellen
-    in de database aan te maken:
+    De functie Add-ToDatabase maakt gebruik van een SQL database. De kolom UniqueID wordt gevuld met een gegenereerd GUID zodat deze kolom 
+    als primary key aangemerkt kan worden binnen SQL. Gebruik de volgende sql query om de juiste tabellen in de database aan te maken:
 
     SET ANSI_NULLS ON
     GO
@@ -49,16 +49,17 @@
     CREATE TABLE [dbo].[ZDL_Certificaten](
         [Subject] [varchar](1000) NULL,
         [FriendlyName] [varchar](1000) NULL,
-        [Thumbprint] [varchar](100) NOT NULL,
+        [Thumbprint] [varchar](100) NULL,
         [NotAfter] [varchar](100) NULL,
         [Status] [varchar](100) NULL,
         [HasPrivateKey] [varchar](100) NULL,
         [Issuer] [varchar](1000) NULL,
         [Type] [varchar](100) NULL,
         [Hostname] [varchar](100) NULL,
+        [UniqueID] [varchar](50) NOT NULL,
     CONSTRAINT [PK_ZDL_Certificaten] PRIMARY KEY CLUSTERED 
     (
-    [Thumbprint] ASC
+    [UniqueID] ASC
     )WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
     ) ON [PRIMARY]
 
@@ -186,6 +187,7 @@ Function Get-RemoteCertificates {
                     Issuer          = $Certificate.Issuer
                     Type            = 'Computer.Personal'
                     Hostname        = $ENV:COMPUTERNAME
+                    UniqueID        = [guid]::NewGuid().Guid
                 }
                 $ServerCertificates += $Object
                 Clear-Variable Object
@@ -235,8 +237,8 @@ function Add-ToDatabase{
         $Cmd = New-Object System.Data.SqlClient.SqlCommand
         $Cmd.Connection = $Connection
         Try{
-            $Cmd.CommandText = "INSERT INTO dbo.DATABASE (Subject,FriendlyName,Thumbprint,NotAfter,Status,HasPrivateKey,Issuer,Type,Hostname) 
-            VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}')" -f $DbCert.Subject,$DbCert.FriendlyName,$DbCert.Thumbprint,$DbCert.NotAfter,$DbCert.Status,$DbCert.HasPrivateKey,$DbCert.Issuer,$DbCert.Type,$DbCert.Hostname
+            $Cmd.CommandText = "INSERT INTO dbo.DATABASE (Subject,FriendlyName,Thumbprint,NotAfter,Status,HasPrivateKey,Issuer,Type,Hostname,UniqueID) 
+            VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}')" -f $DbCert.Subject,$DbCert.FriendlyName,$DbCert.Thumbprint,$DbCert.NotAfter,$DbCert.Status,$DbCert.HasPrivateKey,$DbCert.Issuer,$DbCert.Type,$DbCert.Hostname,$DbCert.UniqueID
             $Result = $Cmd.ExecuteNonQuery()                
             if ($result -eq 1){
                 Add-Logging "Het certificaat met thumbprint $($DbCert.Thumbprint) wordt toegevoegd."
