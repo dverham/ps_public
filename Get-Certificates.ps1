@@ -17,6 +17,7 @@
     De certificaten worden geinventariseerd en de volgende waarden worden toegevoegd:
     - Type: Geeft aan waar de certificaten staan (Computer.Personal)
     - Status: Per certificaat checken we de geldigheid. Bij geldig: valid. Bij verlopen: Expired.
+    - UniqueID: Dit property wordt gevuld met een uniek GUID. De waarde wordt later gebruikt als primary key in SQL.
 
     Na inventarisatie wordt het resultaat in de Shell weergegeven en als .CSV bestand opgeslagen. 
     Pas de waarde in de variabele $Global:CsvFile aan om een eigen pad te kiezen.
