@@ -35,7 +35,7 @@
 [System.Collections.ArrayList]$LogVariable = @()
 $Who = "$env:userdomain\$env:username"
 $WinVer = Get-WmiObject -Class Win32_OperatingSystem | ForEach-Object -MemberName Caption
-$logFile = "E:\SysteembeheerScripts\log\Get-MailSource_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
+$logFile = "Pad\log\Get-MailSource_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
 $StartDateTime = (Get-Date -UFormat "%Y-%m-%d %H:%M:%S")
 # Voeg de koptekst toe aan het logbestand.
 Add-Content $logFile -value "************************************************************************************************
@@ -64,7 +64,7 @@ Function Connect-ToExchange{
             Add-Logging 'Er wordt een PowerShell sessie met Exchange opgezet.'
             try{
                 $Credentials = Get-Credential
-                $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionURI http://srp-exc-0010/PowerShell/ -Authentication Kerberos -Credential $Credentials -ErrorAction Stop
+                $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionURI http://server/PowerShell/ -Authentication Kerberos -Credential $Credentials -ErrorAction Stop
                 Import-PSSession $Session
             }
             Catch [System.Management.Automation.Remoting.PSRemotingTransportException]{
@@ -125,12 +125,4 @@ Foreach ($Entry in $SourceContext){
     $ClientType | select Timestamp,EventID,Source,Sender,Recipients,MessageSubject,MessageID,RecipientCount,SourceContext | sort Timestamp -Descending
 }
 # Exporteer de resultaten naar .CSV
-$ClientType | Sort Timestap -Descending | Export-Csv E:\Dominiek\Exchange\Test.CSV -NoTypeInformation -NoClobber
-
-
-
-________________________________________
-Disclaimer
-
-Dit bericht is geprivilegieerd en kan vertrouwelijke informatie bevatten. Aan dit bericht kunnen geen rechten worden ontleend. Het bericht is alleen bestemd voor de geadresseerde. Indien dit bericht niet voor u is bestemd, verzoeken wij u dit onmiddellijk aan ons te melden en de inhoud van dit bericht te vernietigen.
-
+$ClientType | Sort Timestap -Descending | Export-Csv PAD\Export.CSV -NoTypeInformation -NoClobber
