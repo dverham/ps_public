@@ -25,7 +25,9 @@
     Dit script is onderdeel van vier componenten:
     1: Add-FsrmServer.ps1 | Dit script stelt een nieuwe server in om FSRM te gebruiken.
     2: Set-FsrmActions.ps1 | Dit script voert de acties uit nadat Ransomware gedetecteerd is.
-    3: subinacl.exe | Deze executable zorgt er voor dat de rechten weg genomen worden op de share.
+    3: Update-ExtensionsLocally.ps1 | Dit script werkt de extensies bij van de share op het netwerk.
+    4: Update-Extensions.ps1 | Dit script haalt de extensies van het internet op en slaat deze lokaal op de management server op.
+    Subinacl.exe op 2012 en hoger niet aan de gang gekregen / geen rechten om admin shares aan te passen 
     
 .EXAMPLE
     .\Add-FsrmServer.ps1
@@ -46,7 +48,7 @@
 [System.Collections.ArrayList]$LogVariable = @()
 $Who = "$env:userdomain\$env:username"
 $WinVer = Get-WmiObject -Class Win32_OperatingSystem | ForEach-Object -MemberName Caption
-$logFile = "\\Path\log\Add-FsrmServer_"+$ENV:COMPUTERNAME+"_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
+$logFile = "[pad]\log\Add-FsrmServer_"+$ENV:COMPUTERNAME+"_"+(Get-Date -UFormat "%Y%m%d%H%M%S")+".log"
 $StartDateTime = (Get-Date -UFormat "%Y-%m-%d %H:%M:%S")
 # Voeg de koptekst toe aan het logbestand.
 Add-Content $logFile -value "************************************************************************************************
@@ -107,16 +109,16 @@ Function Set-ScriptFolder {
     if ($RansomwareFolder -notlike 'True') {
         New-Item -ItemType directory -Path 'C:\Scripts\Ransomware'
         Add-Logging 'C:\Scripts\Ransomware folder is aangemaakt.'
-        xcopy '\\SERVER\FsrmConfig$\Set-FsrmActions.ps1' 'C:\Scripts\Ransomware' /Y
-        # xcopy '\\SSERVER\FsrmConfig$\subinacl.exe' 'C:\Scripts\Ransomware' /Y
-        xcopy '\\SERVER\FsrmConfig$\Update-ExtensionsInternally.ps1' 'C:\Scripts\Ransomware' /Y
+        xcopy '[DFS-N Config Pad]\FsrmConfig\Set-FsrmActions.ps1' 'C:\Scripts\Ransomware' /Y
+        # xcopy '[DFS-N Config Pad]\FsrmConfig$\subinacl.exe' 'C:\Scripts\Ransomware' /Y
+        xcopy '[DFS-N Config Pad]\FsrmConfig\Update-ExtensionsInternally.ps1' 'C:\Scripts\Ransomware' /Y
         Add-Logging 'De scripts zijn gekopieerd naar C:\Scripts\Ransomware.'
     }
     else {
         Add-Logging 'De C:\Scrips\Ransomware folder bestaat al.'
-        xcopy '\\SERVER\FsrmConfig$\Set-FsrmActions.ps1' 'C:\Scripts\Ransomware' /Y
-        # xcopy '\\SERVER\FsrmConfig$\subinacl.exe' 'C:\Scripts\Ransomware' /Y
-        xcopy '\\SERVER\FsrmConfig$\Update-ExtensionsInternally.ps1' 'C:\Scripts\Ransomware' /Y
+        xcopy '[DFS-N Config Pad]\FsrmConfig\Set-FsrmActions.ps1' 'C:\Scripts\Ransomware' /Y
+        # xcopy [DFS-N Config Pad]\FsrmConfig$\subinacl.exe' 'C:\Scripts\Ransomware' /Y
+        xcopy [DFS-N Config Pad]\FsrmConfig\Update-ExtensionsInternally.ps1' 'C:\Scripts\Ransomware' /Y
         Add-Logging 'De scripts zijn gekopieerd naar C:\Scripts\Ransomware.'
     }
 }
@@ -150,19 +152,19 @@ function Add-FsrmRole {
  
 function Set-Fsrm {
     # Stel mail notificaties in
-    $FromAddress = "FSRM_"+$ENV:COMPUTERNAME+"@domein.nl"
-    Set-FsrmSetting -AdminEmailAddress "Systeembeheer@domein.nl" -SmtpServer "smtp.domein.local" -FromEmailAddress $FromAddress
+    $FromAddress = "FSRM_"+$ENV:COMPUTERNAME+"@zuyderland.nl"
+    Set-FsrmSetting -AdminEmailAddress "admin mail address" -SmtpServer "smtp server" -FromEmailAddress $FromAddress
     Add-Logging 'De notificaties zijn ingesteld.'
  
     # Maak een File Screen group aan genaamd Ransomware_Extensions, met maar 1 extensie.
     New-FsrmFileGroup -Name "Ransomware_Extensions" -Description "Deze groep wordt bijgewerkt met bekende crypto extensies." -IncludePattern @("*.dvtestdvtest")
     Add-Logging 'De File Screen groep met de naam Ransomware_Extensions is aangemaakt.'
     # Update online
-    Set-FsrmFileGroup -name "Ransomware_Extensions" -IncludePattern @((Invoke-WebRequest -Uri "https://fsrm.experiant.ca/api/v1/combined" -UseBasicParsing).content | convertfrom-json | % {$_.filters})
-    # Update via de SRP-BHR-0001
-    # $Extensions = Get-Content '\\SERVER\FsrmConfig$\Known_Extensions.txt'
-    # Set-FsrmFileGroup -name "Ransomware_Extensions" -IncludePattern($Extensions)
-    Add-Logging 'De File Screen groep is bijgewerkt met bekende extensies van fsrm.experiant.ca via de SRP-BHR-0001'
+    # Set-FsrmFileGroup -name "Ransomware_Extensions" -IncludePattern @((Invoke-WebRequest -Uri "https://fsrm.experiant.ca/api/v1/combined" -UseBasicParsing).content | convertfrom-json | % {$_.filters})
+    # Update via de local host
+    $Extensions = Get-Content '[DFS-N Config Pad]\FsrmConfig\Known_Extensions.txt'
+    Set-FsrmFileGroup -name "Ransomware_Extensions" -IncludePattern($Extensions)
+    Add-Logging 'De File Screen groep is bijgewerkt met bekende extensies van fsrm.experiant.ca via de localhost'
  
     # Maak een File Screen template aan
     $MA = New-FsrmAction -Type Email -MailTo "[Admin Email]" -Subject "$ENV:COMPUTERNAME FSRM Ransomware Notification!" -Body "User [Source Io Owner] attempted to save [Source File Path] to [File Screen Path] on the [Server] server. This file is in the [Violated File Group] file group, which is not permitted on the server." 
@@ -174,7 +176,7 @@ function Set-Fsrm {
     
     # Maak de file screens aan
     [System.Collections.ArrayList]$PreppedVols = @()
-    $Vol = Get-Volume | where {$_.DriveType -match 'Fixed' -And $_.FileSystemLabel -notmatch 'System Reserved'}
+    $Vol = Get-Volume | where {$_.DriveType -match 'Fixed' -And $_.FileSystemLabel -notmatch 'System Reserved' -And $_.DriveLetter -notmatch 'C'}
     foreach ($DL in ($Vol.DriveLetter)) {
         $PreppedDL = $DL+':\'
         $PreppedVols += $PreppedDL
@@ -198,10 +200,19 @@ function Check-AdModule {
     }
 }
  
-Set-UpdateTask {
+function Set-UpdateTask {
     $Action = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -Argument '-ExecutionPolicy Bypass C:\Scripts\Ransomware\Update-ExtensionsInternally.ps1'
     $Trigger = New-ScheduledTaskTrigger -Daily -At 9am
     Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskPath FSRM -TaskName 'FSRM - Update File Screen Group - Ransomware_Extensions' -Description 'FSRM - Update File Screen Group - Ransomware_Extensions' -User 'System'
+}
+ 
+function Add-ToGroup {
+    # Voeg het computerobject toe aan de DoC-FsrmConfig groep in AD.
+    $LocalComputer = Get-ADComputer -Identity $ENV:COMPUTERNAME
+    if ($LocalComputer) {
+        Add-ADGroupMember -Identity 'DoC - FsrmConf' -Members $LocalComputer
+        Add-Logging "De computer $LocalComputer is toegevoegd aan de groep DoC - FsrmConf."
+    }
 }
  
 ##########################################################################################
@@ -221,7 +232,9 @@ if ($Global:FsrmStatus -notlike 'Installed') {Add-FsrmRole}
 Set-Fsrm
 # Maak een geplande taak om de extensies bij te werken
 Set-UpdateTask
+# Voeg het computerobject toe aan de groep DoC - FsrmConf
+Add-ToGroup
 # Einde van het script
 Add-Logging 'Het einde van het script is bereikt.'
-Start-Sleep 10
 Add-Logging "Logging is terug te vinden op $LogFile"
+Start-Sleep 10
