@@ -62,15 +62,15 @@ function Disable-BadUser {
     Add-Logging "Het account $BadUserWithoutDomain is geblokkeerd in AD."
 }
 
-function Send-Logoff ($BadUser) {
-    # Credentials object maken en opgeslagen credentials inlezen
-    $Credential = Import-Clixml -Path '[pad]\FsrmConfig\credential.cred'
+function Send-Logoff ($Baduser) {
+    # Vraag de gebruikersnaam en wachtwoord op;
+    $SecurePassword = Get-Content '\\zorg\data\FsrmConfig\EncryptedPassword.txt' | ConvertTo-SecureString -Key (Get-Content '\\zorg\data\FsrmConfig\AesKey.key')
     # SQL object maken
     Try {
         $DataSource                     = 'SQL server instance'
-        $User                           = $Credential.UserName
-        $Password                       = $Credential.GetNetworkCredential().Password
-        $Database                       = 'Database'
+        $User                           = 'Gebruikersnaam'
+        $Password                       = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
+        $Database                       = 'p-res-workspace-conf'
         $ConnectionString               = "Server=$DataSource;uid=$User;pwd=$Password;Database=$Database;Integrated Security=True;"
         $Connection                     = New-Object System.Data.SqlClient.SqlConnection
         $Connection.ConnectionString    = $ConnectionString
@@ -138,14 +138,11 @@ foreach ($Event in $Events) {
     $BadFile = $Event.ReplacementStrings[3]
     $Posi = $SharePath.IndexOf("\")
     $SharePart = $SharePath.Substring(0,1)
-    # $SubinaclCmd = "C:\Scripts\Ransomware\subinacl.exe /verbose=1 /share \\127.0.0.1\" + "$SharePart" + "$" + " /deny=" + "$BadUser"
 # Zet een actie uit wanneer de rule matcht    
     if ($Rule -match "Ransomware") {
-        # cmd /c $SubinaclCmd - Uitgezet; Niet meer mogelijk om rechten op administrative shares aan te passen.
         Add-Logging "$FullEvent"
-        # Add-Logging "$SubinaclCmd wordt uitgevoerd."
         Disable-BadUser
-        # Send-Logoff - Uitgezet; nog in ontwikkeling
+        Send-Logoff
         Clear-Variable BadUser
     }
 }
