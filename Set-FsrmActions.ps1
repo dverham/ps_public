@@ -15,6 +15,25 @@
     Subinacl.exe op 2012 en hoger niet aan de gang gekregen / geen rechten om admin shares aan te passen 
 
     Het script disabled het AD gebruikersobject en logt de gebruiker af.
+    
+    Om verbinding te maken met een de SQL server;
+    - Maak een key file
+    - Maak een password file
+    - Het script leest deze in vanaf de file share
+    - Zet rechten op het .key bestand om security te borgen. 
+    (System, Domain Admins, Security Groep: DoC - FsrmConf met de computer objecten waar het script uitgevoerd is.)
+    
+    Stap 1: Maak een key file
+    $AESKey = New-Object Byte[] 32
+    [Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($AESKey)
+    $AESKey | out-file E:\systeembeheerscripts\FsrmConfig\AesKey.key
+
+    Stap 2: Maak een password file
+    $Cred = Get-Credential
+    $Cred.Password| ConvertFrom-SecureString -Key (get-content [pad]\FsrmConfig\AesKey.key)| Set-Content [Pad]\FsrmConfig\EncryptedPassword.txt 
+
+    Wachtwoord veranderd van het account? Maak dan een nieuw password bestand aan.
+    Nieuw wachtwoord bestand maken op basis van een nieuwe key? Voer dan eerst stap 1 uit.
 
 .EXAMPLE
     ALLEEN UITVOEREN VIA FSRM, NIET VIA ENIGE ANDERE MANIEREN
