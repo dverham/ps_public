@@ -15,25 +15,16 @@
     Subinacl.exe op 2012 en hoger niet aan de gang gekregen / geen rechten om admin shares aan te passen 
 
     Het script disabled het AD gebruikersobject en logt de gebruiker af.
-    
-    Om verbinding te maken met een de SQL server;
-    - Maak een key file
-    - Maak een password file
-    - Het script leest deze in vanaf de file share
-    - Zet rechten op het .key bestand om security te borgen. 
-    (System, Domain Admins, Security Groep: DoC - FsrmConf met de computer objecten waar het script uitgevoerd is.)
-    
-    Stap 1: Maak een key file
+
+    Wachtwoord van het account voor SQL veranderd? Geen probleem.
+    Gebruik de bestaande key om een nieuw wachtwoord bestand te maken via de volgende code:
+    $Cred = Get-Credential
+    $Cred.Password| ConvertFrom-SecureString -Key (get-content Pad\AesKey.key)| Set-Content Pad\EncryptedPassword.txt
+
+    Wil je ook een nieuwe key? 
     $AESKey = New-Object Byte[] 32
     [Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($AESKey)
-    $AESKey | out-file E:\systeembeheerscripts\FsrmConfig\AesKey.key
-
-    Stap 2: Maak een password file
-    $Cred = Get-Credential
-    $Cred.Password| ConvertFrom-SecureString -Key (get-content [pad]\FsrmConfig\AesKey.key)| Set-Content [Pad]\FsrmConfig\EncryptedPassword.txt 
-
-    Wachtwoord veranderd van het account? Maak dan een nieuw password bestand aan.
-    Nieuw wachtwoord bestand maken op basis van een nieuwe key? Voer dan eerst stap 1 uit.
+    $AESKey | out-file Pad\AesKey.key
 
 .EXAMPLE
     ALLEEN UITVOEREN VIA FSRM, NIET VIA ENIGE ANDERE MANIEREN
@@ -75,7 +66,7 @@ Function Add-Logging ($LogMessage){
 }
 
 function Disable-BadUser {
-    $BadUserWithoutDomain = $BadUser.Substring(5)
+    $Global:BadUserWithoutDomain = $BadUser.Substring(5)
     import-module ActiveDirectory
     Disable-ADAccount -Identity $BadUserWithoutDomain
     Add-Logging "Het account $BadUserWithoutDomain is geblokkeerd in AD."
@@ -83,13 +74,13 @@ function Disable-BadUser {
 
 function Send-Logoff ($Baduser) {
     # Vraag de gebruikersnaam en wachtwoord op;
-    $SecurePassword = Get-Content '\\zorg\data\FsrmConfig\EncryptedPassword.txt' | ConvertTo-SecureString -Key (Get-Content '\\zorg\data\FsrmConfig\AesKey.key')
+    $SecurePassword = Get-Content 'Pad\EncryptedPassword.txt' | ConvertTo-SecureString -Key (Get-Content 'Pad\AesKey.key')
     # SQL object maken
     Try {
-        $DataSource                     = 'SQL server instance'
-        $User                           = 'Gebruikersnaam'
+        $DataSource                     = 'SQL Instance'
+        $User                           = 'User'
         $Password                       = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
-        $Database                       = 'p-res-workspace-conf'
+        $Database                       = 'Database'
         $ConnectionString               = "Server=$DataSource;uid=$User;pwd=$Password;Database=$Database;Integrated Security=True;"
         $Connection                     = New-Object System.Data.SqlClient.SqlConnection
         $Connection.ConnectionString    = $ConnectionString
@@ -120,11 +111,11 @@ function Send-Logoff ($Baduser) {
         $ErrorActionPreference = 'Stop'
         try {
             # Controleer dat de gebruiker ingelogd is.
-            $Sessies = quser | Where-Object {$_ -match $BadUser}
+            $Sessies = quser | Where-Object {$_ -match $Using:BadUserWithoutDomain}
             # Sessie ID verwerken
-            $SessieIds = ($Sessies -split ' +')[2]
+            $SessieIds = ($Sessies -split ' +')[3]
             # Troubleshooting 
-            Write-Host "Er zijn $(@(SessionIds).Count) sessies gevonden."
+            Write-Host "Er zijn $(@($SessionIds).Count) sessies gevonden."
             # Verstuur het logoff command per sessie
             $SessieIds | ForEach-Object {
                 Write-Host "Sessie ID [$($_)] wordt afgemeld..."
@@ -140,7 +131,8 @@ function Send-Logoff ($Baduser) {
             }
         }
     }
-    Invoke-Command -ComputerName $IwcData.strComputerName -Authentication Kerberos -ScriptBlock $ScriptBlock
+    $Credential = New-Object System.Management.Automation.PSCredential ("user", $SecurePassword)
+    Invoke-Command -ComputerName $IwcData.strComputerName -Credential $Credential -ScriptBlock $ScriptBlock
 }
 
 ##########################################################################################
