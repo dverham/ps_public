@@ -1,39 +1,48 @@
 <#
 .SYNOPSIS
-    Het script blokkeert de gebruiker op de admin share waar misbruik herkent is door FSRM.
+    Het script voert countermeasures uit wanneer er ransomware gedetecteerd is door FSRM.
 
 .DESCRIPTION
     Het script triggert door een File Screen en controleert het event log op entries van FSRM.
     De entry wordt ingelezen via een replacementstring array waar datapunten direct in opgeslagen zijn.
     Troubleshooting tip: om dit array uit te lezen : $Events.ReplacementStrings
 
-    Dit script is onderdeel van vier componenten:
-    1: Add-FsrmServer.ps1 | Dit script stelt een nieuwe server in om FSRM te gebruiken.
-    2: Set-FsrmActions.ps1 | Dit script voert de acties uit nadat Ransomware gedetecteerd is.
-    3: Update-ExtensionsLocally.ps1 | Dit script werkt de extensies bij van de share op het netwerk.
-    4: Update-Extensions.ps1 | Dit script haalt de extensies van het internet op en slaat deze lokaal op de management server op.
-    Subinacl.exe op 2012 en hoger niet aan de gang gekregen / geen rechten om admin shares aan te passen 
-
-    Het script disabled het AD gebruikersobject en logt de gebruiker af.
+    Het script kan het gebruikersobject disablen in AD en de gebruiker afmelden wanneer deze een Ivanti sessie heeft.
+    Het afmelden is nog nie gewenst en dus niet actief.
 
     Wachtwoord van het account voor SQL veranderd? Geen probleem.
     Gebruik de bestaande key om een nieuw wachtwoord bestand te maken via de volgende code:
     $Cred = Get-Credential
-    $Cred.Password| ConvertFrom-SecureString -Key (get-content Pad\AesKey.key)| Set-Content Pad\EncryptedPassword.txt
+    $Cred.Password| ConvertFrom-SecureString -Key (get-content pad\FsrmConfig\AesKey.key)| Set-Content E:\systeembeheerscripts\FsrmConfig\EncryptedPassword.txt
 
     Wil je ook een nieuwe key? 
     $AESKey = New-Object Byte[] 32
     [Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($AESKey)
-    $AESKey | out-file Pad\AesKey.key
+    $AESKey | out-file pad\FsrmConfig\AesKey.key
+
+    Dit script is onderdeel van de FSRM toolkit, bestaande uit:
+    - Inrichting                        Doel
+    1: Add-PassiveFsrmServer.ps1        Dit richt FSRM met passieve File Screens in. (Monitoring)
+    2: Add-ActiveFsrmServer.ps1         Dit richt FSRM met actieve File Screens in. (Productie)
+    3: Set-PassiveScreensToActive.ps1   Dit converteert een monitoring inrichting naar een productie inrichting.
+    
+    - Countermeasures                   Doel
+    1: Set-FsrmActions.ps1              Voert de acties uit om Ransomware tegen te gaan.
+
+    - Supporting                        Doel
+    1: Remove-FsrmConfiguration.ps1     Haalt FSRM configuratie weg.
+    2: Update-Extensions.ps1            Download extensies van https://fsrm.experiant.ca/api/v1/combined.
+    3: Update-ExtensionsInternally.ps1  Download extensies en exclusions lokaal, werkt de File Group bij.
+    4: Update-RemoteFsrmServers.ps1     Vraagt leden op van de FSRM groep en triggert de remote update taak.
+
 
 .EXAMPLE
     ALLEEN UITVOEREN VIA FSRM, NIET VIA ENIGE ANDERE MANIEREN
 
 .NOTES
-    Gebaseerd op het origineel van Tim Buntrock, RansomwareBlockSmb.ps1, URL: https://gallery.technet.microsoft.com/scriptcenter/Protect-your-File-Server-f3722fce
     Aangepast door: Dominiek Verham
     Mail: dominiek.verham@conoscenza.nl
-    Doel: Automatische acties uitvoeren om een ransomware aanval te blokkeren.
+    Doel: Voert de acties uit om Ransomware tegen te gaan.
 #>
 
 ##########################################################################################
@@ -66,7 +75,7 @@ Function Add-Logging ($LogMessage){
 }
 
 function Disable-BadUser {
-    $Global:BadUserWithoutDomain = $BadUser.Substring(5)
+    $BadUserWithoutDomain = $BadUser.Substring(5)
     import-module ActiveDirectory
     Disable-ADAccount -Identity $BadUserWithoutDomain
     Add-Logging "Het account $BadUserWithoutDomain is geblokkeerd in AD."
@@ -74,13 +83,13 @@ function Disable-BadUser {
 
 function Send-Logoff ($Baduser) {
     # Vraag de gebruikersnaam en wachtwoord op;
-    $SecurePassword = Get-Content 'Pad\EncryptedPassword.txt' | ConvertTo-SecureString -Key (Get-Content 'Pad\AesKey.key')
+    $SecurePassword = Get-Content 'pad\FsrmConfig\EncryptedPassword.txt' | ConvertTo-SecureString -Key (Get-Content 'pad\FsrmConfig\AesKey.key')
     # SQL object maken
     Try {
         $DataSource                     = 'SQL Instance'
-        $User                           = 'User'
+        $User                           = 'account'
         $Password                       = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
-        $Database                       = 'Database'
+        $Database                       = 'database'
         $ConnectionString               = "Server=$DataSource;uid=$User;pwd=$Password;Database=$Database;Integrated Security=True;"
         $Connection                     = New-Object System.Data.SqlClient.SqlConnection
         $Connection.ConnectionString    = $ConnectionString
@@ -131,8 +140,10 @@ function Send-Logoff ($Baduser) {
             }
         }
     }
-    $Credential = New-Object System.Management.Automation.PSCredential ("user", $SecurePassword)
+    $SecurePasswordPdq = Get-Content 'PadMetEncryptedFile.txt' | ConvertTo-SecureString -Key (Get-Content 'PadMetKey')
+    $Credential = New-Object System.Management.Automation.PSCredential ("user", $SecurePasswordPdq)
     Invoke-Command -ComputerName $IwcData.strComputerName -Credential $Credential -ScriptBlock $ScriptBlock
+    Add-Logging "Send-Logoff afgerond."
 }
 
 ##########################################################################################
@@ -153,7 +164,7 @@ foreach ($Event in $Events) {
     if ($Rule -match "Ransomware") {
         Add-Logging "$FullEvent"
         Disable-BadUser
-        Send-Logoff
+        # Send-Logoff
         Clear-Variable BadUser
     }
 }
